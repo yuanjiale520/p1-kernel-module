@@ -1,0 +1,67 @@
+name: P1 kernel module and real terminal screenshots
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '*.c'
+      - '*.h'
+      - 'Makefile'
+      - '*.sh'
+      - '.github/workflows/p1-cloud.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  linux-module:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      P1_NAME: Student
+      TERM: xterm-256color
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check Bash syntax in the cloud
+        shell: bash
+        run: |
+          for task_script in check_env.sh demo.sh prepare_cloud.sh cloud-run.sh; do
+            bash -n "$task_script"
+          done
+
+      - name: Prepare matching headers and the virtual display
+        shell: bash
+        run: bash ./prepare_cloud.sh
+
+      - name: Compile, insert, test, remove, and capture the real terminal
+        shell: bash
+        run: bash ./cloud-run.sh
+
+      - name: Collect kernel log on failure
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p logs
+          sudo dmesg | tail -n 80 > logs/kernel-failure.txt
+
+      - name: Upload source, module, screenshots, and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: p1-results-${{ github.run_id }}
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            main.c
+            greeting.c
+            arithmetic.c
+            p1_demo.h
+            Makefile
+            README.md
+            CLOUD_RUN.md
+            p1_demo.ko
+            screenshots/*.png
+            logs/
