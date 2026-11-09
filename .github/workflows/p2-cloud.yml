@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 35
     env:
       DEBIAN_FRONTEND: noninteractive
-      P2_BUILD_DIR: ${{ runner.temp }}/p2-build
+      P2_BUILD_DIR: /tmp/p2-build
       P2_RESULTS: ${{ github.workspace }}/p2-results
       TERM: xterm-256color
     steps:
