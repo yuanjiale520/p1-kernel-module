@@ -1,0 +1,52 @@
+#!/bin/sh
+export PATH=/bin:/sbin
+mount -t devtmpfs devtmpfs /dev
+exec </dev/console >/dev/console 2>&1
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs tmpfs /tmp
+hostname p2-guest
+
+fail() {
+    echo "P2_GUEST_FAIL: $*"
+    sync
+    reboot -f
+    while :; do sleep 1; done
+}
+
+run() {
+    printf 'p2-guest:/#'
+    printf ' %s' "$@"
+    printf '\n'
+    "$@" || fail "command failed: $*"
+}
+
+echo '=== P2 REAL QEMU GUEST ==='
+run cat /etc/os-release
+echo 'HOST kernel recorded by the cloud runner:'
+run cat /etc/host-kernel
+echo 'GUEST kernel actually running in QEMU:'
+run uname -r
+guest=$(uname -r)
+host=$(cat /etc/host-kernel)
+[ "$guest" != "$host" ] || fail 'host and guest kernels must differ'
+echo 'P2_DIFFERENT_KERNELS_OK'
+echo 'P2_BOOT_READY'
+sleep 5
+
+echo '=== OPTIONAL TASK: LOAD A MATCHING GUEST MODULE ==='
+run ls -l /lib/modules/p2_hello.ko
+run insmod /lib/modules/p2_hello.ko name=Student
+run lsmod
+grep -q '^p2_hello ' /proc/modules || fail 'module was not loaded'
+run sh -c 'dmesg | grep p2_hello'
+run rmmod p2_hello
+[ ! -d /sys/module/p2_hello ] || fail 'module remains loaded'
+run sh -c 'dmesg | grep p2_hello'
+echo 'P2_MODULE_OK'
+sleep 5
+echo 'P2_GUEST_SUCCESS'
+sync
+# QEMU is started with -no-reboot, so this ends the temporary guest cleanly.
+reboot -f
+while :; do sleep 1; done

@@ -1,0 +1,62 @@
+name: P2 self-compiled kernel QEMU and XFCE screenshots
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'p2/**'
+      - '.github/workflows/p2-cloud.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  p2-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      P2_BUILD_DIR: ${{ runner.temp }}/p2-build
+      P2_RESULTS: ${{ github.workspace }}/p2-results
+      TERM: xterm-256color
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check scripts
+        shell: bash
+        run: |
+          for script in p2/*.sh; do bash -n "$script"; done
+          sh -n p2/guest/init
+
+      - name: Build the kernel initramfs and optional guest module
+        shell: bash
+        run: bash p2/build.sh
+
+      - name: Boot QEMU run TigerVNC XFCE and capture real screens
+        shell: bash
+        run: bash p2/session.sh
+
+      - name: Upload the five screenshots
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: P2-screenshots-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: p2-results/screenshots/*.png
+
+      - name: Preserve logs source and build outputs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: P2-evidence-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            p2-results/metadata.json
+            p2-results/logs/
+            p2-results/images/
+            p2-results/config/
+            p2-results/source/
