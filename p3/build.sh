@@ -18,8 +18,13 @@ tar -xJf "$archive" -C "$build"
 kernel="$build/linux-6.6.30"
 make -C "$kernel" ARCH=x86 KCONFIG_ALLCONFIG="$project/kernel.config" allnoconfig \
     2>&1 | tee "$out/logs/configure.log"
+cp "$kernel/.config" "$out/config/kernel.config"
 for option in EXT4_FS BTRFS_FS VIRTIO_BLK FUNCTION_TRACER DYNAMIC_FTRACE; do
-    grep -qx "CONFIG_$option=y" "$kernel/.config"
+    grep "CONFIG_$option" "$kernel/.config" || true
+    if ! grep -qx "CONFIG_$option=y" "$kernel/.config"; then
+        echo "Required option missing: CONFIG_$option=y"
+        exit 1
+    fi
 done
 make -C "$kernel" ARCH=x86 LOCALVERSION= -j"$(nproc)" 2>&1 | tee "$out/logs/kernel-build.log"
 make -C "$kernel" M="$project/module" LOCALVERSION= modules 2>&1 | tee "$out/logs/module-build.log"
