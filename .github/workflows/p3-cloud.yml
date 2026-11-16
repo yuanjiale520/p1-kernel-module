@@ -1,0 +1,55 @@
+name: P3 filesystem kernel code traces and mount module screenshots
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'p3/**'
+      - '.github/workflows/p3-cloud.yml'
+permissions:
+  contents: read
+jobs:
+  p3-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      P3_BUILD_DIR: /tmp/p3-build
+      P3_RESULTS: ${{ github.workspace }}/p3-results
+      TERM: xterm-256color
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check scripts
+        shell: bash
+        run: |
+          for script in p3/*.sh; do bash -n "$script"; done
+          sh -n p3/guest/init
+          python3 -m py_compile p3/code_pages.py
+      - name: Build matching kernel filesystems module and probe
+        shell: bash
+        run: bash p3/build.sh
+      - name: Capture kernel code and actual filesystem execution
+        shell: bash
+        run: bash p3/screens.sh
+      - name: Upload eight screenshots
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: P3-screenshots-${{ github.run_id }}
+          retention-days: 21
+          if-no-files-found: error
+          path: p3-results/screenshots/*.png
+      - name: Preserve diagnostics and source
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: P3-evidence-${{ github.run_id }}
+          retention-days: 21
+          if-no-files-found: warn
+          path: |
+            p3-results/logs/
+            p3-results/config/
+            p3-results/source/
+            p3-results/module/
+            p3-results/code-pages/

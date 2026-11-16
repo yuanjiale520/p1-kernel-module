@@ -1,0 +1,67 @@
+#!/bin/sh
+export PATH=/bin:/sbin TERM=xterm
+mount -t devtmpfs devtmpfs /dev
+exec </dev/console >/dev/console 2>&1
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs tmpfs /tmp
+mount -t tracefs tracefs /tracing
+fail() { echo "P3_FAIL: $*"; sync; reboot -f; while :; do sleep 1; done; }
+run() { printf 'p3-guest:/#'; printf ' %s' "$@"; printf '\n'; "$@" || fail "$*"; }
+screen() { printf '\033[2J\033[H'; echo "=== P3 / $* / Linux $(uname -r) ==="; echo; }
+trace_lines() { grep -v '^#\|^$' /tracing/trace | head -n "$1"; }
+
+mount -t ext4 /dev/vda /mnt/ext4 || fail ext4_mount
+mount -t btrfs -o nodiscard /dev/vdb /mnt/btrfs || fail btrfs_mount
+mount -o bind /mnt/ext4 /mnt/bind || fail bind_mount
+printf 'P3 ext4 open target\n' > /mnt/ext4/open-demo.txt
+grep -E '^(__x64_sys_openat|do_sys_open|do_sys_openat2|do_filp_open|path_openat|do_open|vfs_open|do_dentry_open|ext4_file_open|__x64_sys_write|ksys_write|vfs_write|new_sync_write|btrfs_file_write_iter|btrfs_do_write_iter|btrfs_buffered_write|btrfs_sync_file|__x64_sys_mkdir|do_mkdirat|filename_create|vfs_mkdir|ext4_mkdir|btrfs_mkdir)( |$)' \
+    /tracing/available_filter_functions | awk '{print $1}' > /etc/ftrace-filter
+[ -s /etc/ftrace-filter ] || fail no_ftrace_functions
+
+screen 'Actual ext4 open path'
+run sh -c 'grep " /mnt/ext4 " /proc/self/mounts'
+run /bin/p3_probe open /mnt/ext4/open-demo.txt
+echo 'Actual ftrace calls for the probe PID:'
+trace_lines 28
+grep -q ext4_file_open /tracing/trace || fail missing_ext4_open
+echo 'P3_OPEN_OK'
+sleep 5
+
+screen 'Actual Btrfs write path'
+run sh -c 'grep " /mnt/btrfs " /proc/self/mounts'
+run /bin/p3_probe write /mnt/btrfs/write-demo.txt
+echo 'Actual ftrace calls (buffered write plus explicit fsync):'
+trace_lines 28
+grep -q btrfs_file_write_iter /tracing/trace || fail missing_btrfs_write
+run cat /mnt/btrfs/write-demo.txt
+echo 'P3_WRITE_OK'
+sleep 5
+
+screen 'Actual mkdir dispatch on ext4 and Btrfs'
+run /bin/p3_probe mkdir /mnt/ext4/newdir
+trace_lines 10
+grep -q ext4_mkdir /tracing/trace || fail missing_ext4_mkdir
+run /bin/p3_probe mkdir /mnt/btrfs/newdir
+trace_lines 10
+grep -q btrfs_mkdir /tracing/trace || fail missing_btrfs_mkdir
+run ls -ld /mnt/ext4/newdir /mnt/btrfs/newdir
+echo 'P3_MKDIR_OK'
+sleep 5
+
+screen 'Kernel module lists every mounted filesystem'
+run insmod /lib/modules/p3_mounts.ko
+run lsmod
+run sh -c 'dmesg | grep "p3_mounts:"'
+expected=$(wc -l < /proc/self/mounts)
+actual=$(cat /sys/module/p3_mounts/parameters/mount_count)
+echo "Cross-check /proc/self/mounts entries=$expected; kernel module entries=$actual"
+[ "$expected" = "$actual" ] || fail mount_count_mismatch
+dmesg | grep 'p3_mounts: mount' | grep -q '/mnt/bind' || fail missing_bind_mount
+run rmmod p3_mounts
+echo 'P3_MOUNTS_OK'
+sleep 5
+echo 'P3_GUEST_SUCCESS'
+sync
+reboot -f
+while :; do sleep 1; done
