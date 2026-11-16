@@ -12,8 +12,17 @@ static void control(const char *name, const char *value)
     char path[256];
     snprintf(path, sizeof(path), "/tracing/%s", name);
     int fd = open(path, O_WRONLY | O_TRUNC);
-    if (fd < 0 || write(fd, value, strlen(value)) != (ssize_t)strlen(value)) {
-        perror(path); exit(1);
+    if (fd < 0) { perror(path); exit(1); }
+    size_t length = strlen(value), offset = 0;
+    /* tracefs may consume one filter token per write: handle short writes. */
+    while (offset < length) {
+        ssize_t n = write(fd, value + offset, length - offset);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) {
+            if (!n) errno = EIO;
+            perror(path); exit(1);
+        }
+        offset += n;
     }
     close(fd);
 }
@@ -28,7 +37,7 @@ static void start_trace(void)
     control("tracing_on", "0");
     control("current_tracer", "nop");
     control("set_ftrace_filter", filters);
-    snprintf(pid, sizeof(pid), "%d", getpid());
+    snprintf(pid, sizeof(pid), "%d\n", getpid());
     control("set_ftrace_pid", pid);
     control("trace", "");
     control("current_tracer", "function");
