@@ -1,0 +1,27 @@
+=== FP / tutorial reproduction / debug notes ===
+
+Selected route: (1) find a compatible kernel, then debug it to work.
+Kernel: Linux 2.6.29; compiler: GCC 4.9.4 from kernel.org crosstool.
+
+Why this kernel?
+  The tutorial uses create_proc_entry and create_proc_read_entry.
+  proc_dir_entry exposes data/read_proc/write_proc/owner in 2.6.29.
+  This preserves the legacy tutorial interface for an exact-version experiment.
+
+Debug changes to the tutorial example:
+  1. Read callbacks handle offset, count and EOF: no repeated cat output.
+  2. scnprintf bounds the formatted output.
+  3. Values remain limited to 8 bytes; larger writes return -E2BIG.
+     This avoids silently accepting partial writes as repeated replacements.
+  4. copy_from_user copies userspace data before updating kernel state.
+  5. A mutex protects shared state; foo/bar keep separate private data.
+  6. Both failed initialization and unload remove every created entry.
+
+Build compatibility:
+  Modern host compiler: disable default PIE for old host build tools.
+  Modern Perl: replace removed defined(@val) syntax in kernel/timeconst.pl.
+  Use an older musl BusyBox so userspace can start on the 2.6.29 kernel.
+
+Original source: Linux Kernel Procfs Guide, Chapter 5 (GPL-2.0-or-later).
+https://kernelnewbies.org/Documents/Kernel-Docbooks
+Attachment: procfs-guide_2.6.29.pdf

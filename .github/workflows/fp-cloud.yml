@@ -1,0 +1,50 @@
+name: FP legacy procfs tutorial and A-Tune feature study
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'fp/**'
+      - '.github/workflows/fp-cloud.yml'
+permissions:
+  contents: read
+jobs:
+  fp-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      FP_BUILD_DIR: /tmp/fp-build
+      FP_RESULTS: ${{ github.workspace }}/fp-results
+      TERM: xterm-256color
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check shell syntax
+        run: |
+          for script in fp/*.sh; do bash -n "$script"; done
+          sh -n fp/guest/init
+      - name: Build compatible Linux 2.6.29 and tutorial module
+        run: bash fp/build.sh
+      - name: Capture actual procfs tests and feature-study pages
+        run: bash fp/screens.sh
+      - name: Upload final screenshots
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: FP-screenshots-${{ github.run_id }}
+          retention-days: 21
+          if-no-files-found: error
+          path: fp-results/screenshots/*.png
+      - name: Preserve source and execution diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: FP-evidence-${{ github.run_id }}
+          retention-days: 21
+          if-no-files-found: warn
+          path: |
+            fp-results/logs/
+            fp-results/config/
+            fp-results/source/
+            fp-results/notes/

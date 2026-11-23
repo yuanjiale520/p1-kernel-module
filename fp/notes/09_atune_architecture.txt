@@ -1,0 +1,27 @@
+=== FP / Part 2 / openEuler feature study: A-Tune ===
+Report explanation based on official openEuler 22.03 LTS documentation.
+
+Problem:
+  Different workloads stress CPU, memory, storage and network differently.
+  A single fixed set of operating-system parameters cannot fit every workload.
+
+Selected feature:
+  A-Tune uses AI-assisted workload characterization to recommend or select
+  configuration profiles suited to a service.
+
+Technology behind the feature (three architecture layers):
+  Interaction system: monitor resources and apply configuration policies.
+  System profile: feature engineering and a two-layer classification model.
+  Intelligent decision-making: identify the application and choose a policy.
+
+Conceptual flow:
+  Resource measurements -> workload features -> service classification
+  -> suitable parameter profile -> controlled application -> remeasurement.
+
+Example use case:
+  Web serving (for example Nginx) may stress CPU/network resources.
+  An in-memory database (for example Redis) has different memory/I/O demands.
+  Workload classification helps select an appropriate configuration profile.
+
+Source: official openEuler 22.03 LTS, Getting to Know A-Tune
+docs.openeuler.org/en/docs/22.03_LTS/docs/A-Tune/getting-to-know-a-tune.html

@@ -1,0 +1,28 @@
+=== FP / A-Tune study / evaluation method and conclusions ===
+
+Two supported capabilities in the official documentation:
+  Profile/service-model customization and automatic parameter optimization.
+  These extend the workload-aware configuration mechanism described above.
+
+How to evaluate a tuning policy (experimental design):
+  1. Select a representative workload and a metric (throughput or latency).
+  2. Record the baseline, hardware, software version and current parameters.
+  3. Apply a chosen policy under a controlled, repeatable workload.
+  4. Repeat measurements and check resource use and stability.
+  5. Keep a configuration only when the measured tradeoff meets the objective.
+
+Interpretation:
+  A profile is workload-dependent; a faster result for one service need not
+  imply a faster result for another service. Measurements decide usefulness.
+  This section is a feature/architecture study, as required by FP Part 2.
+
+FP Part 1 findings:
+  A kernel matching the tutorial's API permits its original procfs mechanism.
+  Read/write callbacks bridge userspace and module state without a disk file.
+  Per-entry private data lets multiple files share the same callback code.
+  Offset/EOF, length checks, locking and cleanup make the example reliable.
+
+Sources:
+  Official openEuler 22.03 LTS A-Tune guide (architecture and capabilities).
+  Linux Kernel Procfs Guide, Chapter 5; Linux v2.6.29 include/linux/proc_fs.h.
+  Experiment source and full logs are preserved with this GitHub Actions run.
