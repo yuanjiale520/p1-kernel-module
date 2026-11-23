@@ -8,13 +8,17 @@ mkdir -p "$build" "$out"/{images,logs,screenshots,source,config,notes}
 sudo apt-get update -qq
 sudo apt-get install -y --no-install-recommends build-essential bc bison flex \
     cpio gzip xz-utils curl qemu-system-x86 xvfb xauth xterm scrot xfonts-base \
-    poppler-utils python3
+    poppler-utils python3 libmpc3 libgmp10
 curl -fL --retry 3 https://cdn.kernel.org/pub/linux/kernel/v2.6/linux-2.6.29.tar.xz -o "$build/linux.tar.xz"
 curl -fL --retry 3 https://mirrors.edge.kernel.org/pub/tools/crosstool/files/bin/x86_64/4.9.4/x86_64-gcc-4.9.4-nolibc-x86_64-linux.tar.xz -o "$build/toolchain.tar.xz"
 printf 'ed990f585ce3f050e42d4cec053862419b8280efbd588f847c610108d318e06c  %s\n' "$build/linux.tar.xz" | sha256sum -c - | tee "$out/logs/kernel-checksum.txt"
 printf 'a6f88855a0dce615262c6de528bf07de409012f1fdd4b24abe0ce13fd25ef781  %s\n' "$build/toolchain.tar.xz" | sha256sum -c - | tee "$out/logs/toolchain-checksum.txt"
 tar -xJf "$build/linux.tar.xz" -C "$build"
 tar -xJf "$build/toolchain.tar.xz" -C "$build"
+curl -fL --retry 3 https://old-releases.ubuntu.com/ubuntu/pool/main/m/mpfr4/libmpfr4_3.1.6-1_amd64.deb -o "$build/libmpfr4.deb"
+dpkg-deb -x "$build/libmpfr4.deb" "$build/compat"
+export LD_LIBRARY_PATH="$build/compat/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+sha256sum "$build/libmpfr4.deb" > "$out/logs/compat-library-checksum.txt"
 kernel="$build/linux-2.6.29"
 python3 - "$kernel" "$out/logs/compatibility-patch.txt" <<'PY'
 import pathlib, sys
