@@ -1,0 +1,74 @@
+#!/bin/sh
+export PATH=/bin:/sbin TERM=xterm
+mount -t devtmpfs devtmpfs /dev
+exec </dev/console >/dev/console 2>&1
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs tmpfs /tmp
+fail() { echo "P4_FAIL: $*"; sync; reboot -f; while :; do sleep 1; done; }
+run() { printf 'p4-guest:/#'; printf ' %s' "$@"; printf '\n'; "$@" || fail "$*"; }
+screen() { printf '\033[2J\033[H'; echo "=== P4 / $* / Linux $(uname -r) ==="; echo; }
+pause() { echo; echo "$1"; sleep 5; }
+
+screen 'Environment and address preparation'
+run insmod /lib/modules/dram.ko ram_bytes=536870912
+major=$(awk '$2 == "dram" {print $1}' /proc/devices)
+[ -n "$major" ] || fail dram_major
+run mknod /dev/dram c "$major" 0
+run chmod 600 /dev/dram
+run insmod /lib/modules/paging_lowmem.ko
+run lsmod
+run p4_probe setup
+echo 'CR3 was sampled inside module_init. The loader mm is pinned until unload.'
+pause P4_SETUP_OK
+
+for level in pgd p4d pud pmd pte; do
+    screen "$level / index, raw entry and next physical address"
+    run p4_probe "$level"
+    slot=$(p4_probe value "${level}_slot") || fail slot
+    echo
+    echo 'Inspect the actual 64-bit values in physical RAM with your FILEVIEW tool:'
+    run fileview /dev/dram --dump "$slot" q 64
+    echo 'Each hex row is 16 bytes; the second QWORD is at row address + 8.'
+    echo 'Values above are little-endian decoded QWORDs, including permission flags.'
+    pause "P4_${level}_OK"
+done
+
+screen 'Final physical address and real message bytes'
+run p4_probe data
+pa=$(p4_probe value paddr) || fail paddr
+echo
+run fileview /dev/dram --dump "$pa" b 128
+pause P4_DATA_OK
+
+screen 'Original direct-map address versus the 4KB alias'
+run p4_probe direct
+echo
+echo 'The original __get_free_page address is retained and tested.'
+echo 'The alias is used only to expose every hardware level through a PTE.'
+echo 'A huge-page directory leaf uses its own offset width; it is never a PTE pointer.'
+pause P4_DIRECT_OK
+
+screen 'Supplied tools / physical page-table memory and application data'
+slot=$(p4_probe value pte_slot) || fail pte_slot
+run fileview /dev/dram --dump "$slot" q 128
+echo
+run fileview /dev/dram --dump "$pa" b 128
+echo
+echo 'Directory/PTE values encode frame addresses plus flags; data bytes encode the message.'
+echo 'Strip flags with the physical mask, follow each index, then add the page offset.'
+echo 'RAM reads are read-only and performed in this disposable cloud VM.'
+pause P4_FILEVIEW_OK
+
+screen 'Unload, free the original page and release resources'
+run rmmod paging_lowmem
+[ ! -e /proc/p4_walk ] || fail proc_not_removed
+run rmmod dram
+run lsmod
+run sh -c 'dmesg | grep -E "paging_lowmem:|dram:"'
+echo 'PASS: /proc/p4_walk removed; modules unloaded without an oops.'
+pause P4_CLEANUP_OK
+echo P4_GUEST_SUCCESS
+sync
+reboot -f
+while :; do sleep 1; done
