@@ -21,6 +21,7 @@ Build compatibility:
   Modern host compiler: disable default PIE for old host build tools.
   Modern Perl: replace removed defined(@val) syntax in kernel/timeconst.pl.
   Old GCC runtime: load the matching libmpfr.so.4 from an isolated directory.
+  vDSO link: forward ELF emulation flags to the linker with -Wl,-m,... .
   Use an older musl BusyBox so userspace can start on the 2.6.29 kernel.
 
 Original source: Linux Kernel Procfs Guide, Chapter 5 (GPL-2.0-or-later).

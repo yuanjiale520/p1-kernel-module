@@ -26,7 +26,11 @@ p = pathlib.Path(sys.argv[1]) / 'kernel/timeconst.pl'
 s = p.read_text()
 assert 'defined(@val)' in s
 p.write_text(s.replace('defined(@val)', '@val'))
-pathlib.Path(sys.argv[2]).write_text('Modern Perl compatibility: kernel/timeconst.pl\n- if (!defined(@val))\n+ if (!@val)\n')
+v = pathlib.Path(sys.argv[1]) / 'arch/x86/vdso/Makefile'
+src = v.read_text()
+assert '-m elf_x86_64' in src
+v.write_text(src.replace('-m elf_x86_64', '-Wl,-m,elf_x86_64').replace('-m elf_i386', '-Wl,-m,elf_i386'))
+pathlib.Path(sys.argv[2]).write_text('Build compatibility fixes:\nkernel/timeconst.pl: defined(@val) -> @val\narch/x86/vdso/Makefile: pass linker emulation with -Wl,-m,elf_x86_64\n')
 PY
 cc=$(find "$build" -type f -path '*/bin/x86_64-linux-gcc' -print -quit)
 test -n "$cc"
