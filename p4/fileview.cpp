@@ -138,7 +138,6 @@ int main( int argc, char *argv[] )
 
 	// main loop to navigate the file
 	long long	pageincr = incmin;
-	long long	lineincr = 16LL;
 	long long	position = 0LL;
 	long long	location = 0LL;
 	int		format = 1;
@@ -166,7 +165,6 @@ int main( int argc, char *argv[] )
 			to_read -= nbytes;
 			where += nbytes;
 			}
-		int	datalen = BUFSIZE - to_read; 
 
 		// display the data just read into the 'buffer[]' array
 		unsigned char		*bp;
@@ -239,7 +237,7 @@ int main( int argc, char *argv[] )
 	
 		// await keypress 	
 		long long	inch = 0LL;
-		read( STDIN_FILENO, &inch, sizeof( inch ) );
+		if (read( STDIN_FILENO, &inch, sizeof( inch ) ) <= 0) break;
 		printf( "\e[%d;%dH%60s", 23, COL, " " );	
 
 		// interpret navigation or formatting command
@@ -282,7 +280,7 @@ int main( int argc, char *argv[] )
 			while ( i < 15 )
 				{
 				long long ch = 0;
-				read( STDIN_FILENO, &ch, sizeof( ch ) );
+				if (read( STDIN_FILENO, &ch, sizeof( ch ) ) <= 0) break;
 				ch &= 0xFFFFFF;
 				if ( ch == '\n' ) break;
 				if ( ch == KB_QUIT ) { inbuf[0] = 0; break; }
@@ -296,7 +294,7 @@ int main( int argc, char *argv[] )
 					}
 				if (( ch < 0x20 )||( ch > 0x7E )) continue;
 				inbuf[ i++ ] = ch;
-				printf( "%c", ch );
+				printf( "%c", (int)ch );
 				fflush( stdout );
 				}		
 			printf( "\e[%d;%dH%70s", 23, COL, " " );

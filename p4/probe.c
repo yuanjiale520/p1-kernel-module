@@ -34,7 +34,8 @@ static void read_cfg(void)
         char *p=strchr(line,'=');
         if (!p || nc==64) continue;
         *p++=0; p[strcspn(p,"\r\n")]=0;
-        snprintf(cfg[nc].key,sizeof(cfg[nc].key),"%s",line);
+        require(strlen(line)<sizeof(cfg[nc].key),"configuration key length");
+        strcpy(cfg[nc].key,line);
         snprintf(cfg[nc++].val,sizeof(cfg[0].val),"%s",p);
     }
     fclose(f);
@@ -70,11 +71,17 @@ static struct walk translate(int fd, U va)
     }
     require(0,"no leaf"); return w;
 }
-static void flagline(U raw, int leaf)
+static void flagline(U raw, int level)
 {
-    printf("flags: P=%llu RW=%llu US=%llu A=%llu D=%llu G=%llu NX=%llu\n",
-      raw&1,(raw>>1)&1,(raw>>2)&1,(raw>>5)&1,(raw>>6)&1,(raw>>8)&1,(raw>>63)&1);
-    printf("bit 7: %s=%llu\n",leaf ? "PAT (4KB leaf)" : "PS (directory)",(raw>>7)&1);
+    printf("flags: P=%llu RW=%llu US=%llu A=%llu NX=%llu\n",
+      raw&1,(raw>>1)&1,(raw>>2)&1,(raw>>5)&1,(raw>>63)&1);
+    if(level==3) {
+        printf("Leaf flags: D=%llu G=%llu; bit 7 PAT=%llu (4KB leaf)\n",
+            (raw>>6)&1,(raw>>8)&1,(raw>>7)&1);
+    } else {
+        printf("bit 7: %s=%llu\n",level==0 ? "reserved in PGD" : "PS in PUD/PMD",(raw>>7)&1);
+        puts("Non-leaf bits 6/8 are ignored, not data-page Dirty/Global flags.");
+    }
 }
 static void stage(int fd, const char *name)
 {
@@ -102,7 +109,7 @@ static void stage(int fd, const char *name)
         printf("Entry address = table + index * 8\n");
         printf("              = 0x%016llx + 0x%llx = 0x%016llx\n",s->table,s->index*8,s->slot);
         printf("pread(/dev/dram, entry address, 8) = 0x%016llx\n",s->raw);
-        flagline(s->raw,i==3);
+        flagline(s->raw,i);
     }
     printf("Physical address mask = 0x%016llx\n",get("mask"));
     printf("Entry & mask = 0x%016llx\n",s->base);
@@ -152,23 +159,6 @@ int main(int argc,char **argv)
         puts("PASS: page-table calculation, kernel reference, and actual RAM bytes match.");
         puts("Use entry flags to check permissions; strip flags/NX before using an address.");
         puts("x86 stores each 64-bit entry little-endian; Q view decodes the whole value.");
-    } else if(!strcmp(argv[1],"data")) {
-        char buf[128]={0};
-        require(w.leaf==3,"PTE leaf");
-        printf("v_addr = 0x%016llx\n",w.va);
-        printf("Indices: PGD=%llu PUD=%llu PMD=%llu PTE=%llu\n",w.s[0].index,w.s[1].index,w.s[2].index,w.s[3].index);
-        printf("PTE raw = 0x%016llx\n",w.s[3].raw);
-        printf("Frame = PTE & 0x%016llx = 0x%016llx\n",get("mask"),w.s[3].base);
-        printf("Offset = v_addr & 0xfff = 0x%03llx\n",w.offset);
-        printf("p_addr = frame + offset = 0x%016llx + 0x%03llx\n",w.s[3].base,w.offset);
-        printf("       = 0x%016llx\n",w.pa);
-        printf("Kernel helper walk = 0x%016llx\n",get("paddr"));
-        printf("virt_to_phys(original + offset) = 0x%016llx\n",get("expected"));
-        read_ram(fd,w.pa,buf,strlen(str("message"))+1);
-        require(!strcmp(buf,str("message")),"real physical bytes match written string");
-        printf("Physical RAM string = \"%s\"\n",buf);
-        puts("PASS: independent walk, kernel walk, virt_to_phys and actual bytes all agree.");
-        puts("The 0x123 offset is preserved; flags are excluded from the physical address.");
     } else if(!strcmp(argv[1],"direct")) {
         struct walk d=translate(fd,get("direct_va")); char a[128]={0},b[128]={0}; int i;
         require(d.pa==w.pa,"both VAs map same physical byte");

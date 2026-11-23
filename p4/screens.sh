@@ -12,8 +12,8 @@ if [[ "${1:-}" == --terminal ]]; then
     fi
     exit 0
 fi
-xvfb-run --auto-servernum --server-args='-screen 0 1480x904x24 -nolisten tcp' \
-    xterm -geometry 164x60+0+0 -fn 9x15 -b 2 -bw 0 +sb \
+xvfb-run --auto-servernum --server-args='-screen 0 1404x804x24 -nolisten tcp' \
+    xterm -geometry 140x40+0+0 -fn 10x20 -b 2 -bw 0 +sb \
     -bg '#10141c' -fg '#e6edf3' -cr '#58a6ff' -title 'P4 real page table and physical RAM' \
     -e bash "$project/screens.sh" --terminal
 test "$(cat "$out/logs/demo-exit-code.txt")" = 0
