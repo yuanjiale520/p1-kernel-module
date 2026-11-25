@@ -1,0 +1,125 @@
+#!/bin/sh
+export PATH=/bin:/sbin TERM=xterm
+mount -t devtmpfs devtmpfs /dev
+exec </dev/console >/dev/console 2>&1
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs tmpfs /tmp
+fail() { echo "P5_FAIL: $*"; sync; reboot -f; while :; do sleep 1; done; }
+run() { printf 'p5-guest:/#'; printf ' %s' "$@"; printf '\n'; "$@" || fail "$*"; }
+screen() { printf '\033[2J\033[H'; echo "=== P5 / $* / Linux $(uname -r) ==="; echo; }
+pause() { echo; echo "$1"; sleep 5; }
+row() { head -n 2 /proc/slabinfo; grep '^p5_lab_cache ' /proc/slabinfo || fail cache_missing; }
+owner_ok() { grep -qx 'owner_held=4' /proc/p5_owner && grep -qx 'owner_verified=4' /proc/p5_owner || fail owner_data; }
+no_cache() { if grep -q '^p5_lab_cache ' /proc/slabinfo; then fail cache_leaked; fi; }
+
+screen 'Task, environment and clean baseline'
+echo '1. Create a named slab cache. 2. Allocate from it in another module.'
+echo '3. Find the cache in /proc/slabinfo. 4. Free objects and destroy the cache.'
+run uname -r
+run cat /proc/cmdline
+run sh -c 'grep -E "^CONFIG_(SLUB|SLUB_DEBUG|MODULES|MODULE_UNLOAD|PROC_FS|SYSFS)=" /etc/p5-kernel.config'
+run head -n 2 /proc/slabinfo
+no_cache
+echo 'PASS: p5_lab_cache does not exist before the owner module loads.'
+pause P5_BASELINE_OK
+
+screen 'Create a custom cache and allocate in the owner module'
+run insmod /lib/modules/p5_cache_owner.ko
+run cat /proc/p5_owner
+owner_ok
+run sh -c 'dmesg | grep "p5_owner:"'
+echo
+echo 'Actual /proc/slabinfo entry:'
+row
+[ -d /sys/kernel/slab/p5_lab_cache ] || fail sysfs_cache_missing
+echo 'PASS: custom cache is present; owner holds 4 verified objects.'
+pause P5_CREATE_OK
+
+screen 'Allocate from the SAME cache in a DIFFERENT module'
+run insmod /lib/modules/p5_cache_client.ko count=96
+run cat /proc/p5_client
+grep -qx 'client_held=96' /proc/p5_client || fail client_count
+grep -qx 'client_verified_now=96' /proc/p5_client || fail client_data
+grep -qx 'unique_addresses_verified=96' /proc/p5_client || fail client_unique
+owner_cache=$(sed -n 's/^cache_pointer=//p' /proc/p5_owner)
+client_cache=$(sed -n 's/^cache_pointer=//p' /proc/p5_client)
+[ "$owner_cache" = "$client_cache" ] || fail different_caches
+owner_ok
+run lsmod
+echo "PASS: owner cache=$owner_cache equals client cache=$client_cache."
+echo '4 owner objects + 96 client objects = 100 live application objects.'
+echo 'A real free/reallocation was checked; same-address reuse is an observation, not a guarantee.'
+pause P5_CROSS_MODULE_OK
+
+screen 'Find and interpret the custom cache in /proc/slabinfo'
+row
+echo
+run sh -c 'for attr in object_size slab_size align objs_per_slab order; do printf "%s=" "$attr"; cat "/sys/kernel/slab/p5_lab_cache/$attr"; done'
+awk '$1=="p5_lab_cache" {printf "Parsed row: active_objs=%s total_objs=%s slot_bytes=%s objects_per_slab=%s pages_per_slab=%s\n", $2,$3,$4,$5,$6; if ($3<100 || $4<128) exit 1; found=1} END {if (!found) exit 1}' /proc/slabinfo || fail invalid_slabinfo
+echo
+echo 'name: custom cache name; active_objs/num_objs: allocator accounting and capacity.'
+echo 'objsize: allocator slot bytes; objperslab/pagesperslab describe slab geometry.'
+echo 'slabdata: active_slabs, num_slabs and sharedavail (SLUB does not use sharedavail).'
+echo 'Requested struct size is 128 bytes; metadata and alignment may enlarge its slot.'
+echo 'SLUB active_objs can include per-CPU reservations; module reports give exact held counts.'
+echo 'PASS: cache identity and capacity checked against 100 live objects.'
+pause P5_SLABINFO_OK
+
+screen 'Module dependency protects the cache lifetime'
+run lsmod
+run ls -l /sys/module/p5_cache_owner/holders
+run cat /sys/module/p5_cache_owner/refcnt
+echo 'p5-guest:/# rmmod p5_cache_owner'
+if rmmod p5_cache_owner 2>/tmp/blocked.log; then fail owner_unloaded_too_early; fi
+run cat /tmp/blocked.log
+[ -d /sys/module/p5_cache_owner ] || fail missing_owner
+[ -d /sys/module/p5_cache_client ] || fail missing_client
+owner_ok
+echo 'PASS: normal unload is refused while the consumer depends on exported p5_cache.'
+echo 'EXPORT_SYMBOL_GPL shares the cache; the loader records the consumer dependency.'
+pause P5_DEPENDENCY_OK
+
+screen 'Free all client objects while the cache remains valid'
+run rmmod p5_cache_client
+[ ! -e /proc/p5_client ] || fail client_report_leaked
+run cat /proc/p5_owner
+owner_ok
+run lsmod
+row
+run sh -c 'dmesg | grep "p5_client:"'
+echo 'PASS: 96 client objects freed; 4 owner objects still verify correctly.'
+echo 'Freeing objects returns them to the cache; it does not destroy the cache.'
+pause P5_FREE_CLIENT_OK
+
+screen 'Free owner objects, destroy cache and verify disappearance'
+run rmmod p5_cache_owner
+no_cache
+[ ! -e /proc/p5_owner ] || fail owner_report_leaked
+[ ! -e /sys/kernel/slab/p5_lab_cache ] || fail sysfs_cache_leaked
+run lsmod
+run sh -c 'dmesg | grep -E "p5_owner:|p5_client:"'
+echo 'p5-guest:/# grep "^p5_lab_cache " /proc/slabinfo'
+echo '(no matching entry: verified by the script)'
+echo 'PASS: all 100 objects freed; cache removed from /proc/slabinfo and sysfs.'
+echo 'Required order: unload client -> free owner objects -> kmem_cache_destroy.'
+pause P5_DESTROY_OK
+
+screen 'Repeat a full lifecycle with a different allocation count'
+run insmod /lib/modules/p5_cache_owner.ko
+run insmod /lib/modules/p5_cache_client.ko count=16
+run sh -c 'grep -E "client_held|client_verified_now|unique_addresses" /proc/p5_client'
+grep -qx 'client_held=16' /proc/p5_client || fail reload_count
+grep -qx 'client_verified_now=16' /proc/p5_client || fail reload_data
+owner_ok
+row
+run rmmod p5_cache_client
+run rmmod p5_cache_owner
+no_cache
+echo 'PASS: repeated create, cross-module allocation, free and destroy succeeded.'
+echo 'P5 requirements: custom cache CREATED; second-module allocation VERIFIED; slabinfo FOUND.'
+pause P5_REPEAT_OK
+echo P5_GUEST_SUCCESS
+sync
+reboot -f
+while :; do sleep 1; done

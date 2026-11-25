@@ -1,0 +1,50 @@
+name: P5 custom slab cache and cross-module allocation
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'p5/**'
+      - '.github/workflows/p5-cloud.yml'
+permissions:
+  contents: read
+jobs:
+  p5-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      P5_BUILD_DIR: /tmp/p5-build
+      P5_RESULTS: ${{ github.workspace }}/p5-results
+      TERM: xterm-256color
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check shell syntax
+        run: |
+          for script in p5/*.sh; do bash -n "$script"; done
+          sh -n p5/guest/init
+      - name: Build matching kernel and both slab modules
+        run: bash p5/build.sh
+      - name: Run slab experiments and capture real terminal screenshots
+        run: bash p5/screens.sh
+      - name: Upload eight final screenshots
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: P5-screenshots-${{ github.run_id }}
+          retention-days: 21
+          if-no-files-found: error
+          path: p5-results/screenshots/*.png
+      - name: Preserve source configuration and execution logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: P5-evidence-${{ github.run_id }}
+          retention-days: 21
+          if-no-files-found: warn
+          path: |
+            p5-results/logs/
+            p5-results/config/
+            p5-results/module/
+            p5-results/source/
