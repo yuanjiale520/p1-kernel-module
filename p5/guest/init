@@ -9,7 +9,7 @@ fail() { echo "P5_FAIL: $*"; sync; reboot -f; while :; do sleep 1; done; }
 run() { printf 'p5-guest:/#'; printf ' %s' "$@"; printf '\n'; "$@" || fail "$*"; }
 screen() { printf '\033[2J\033[H'; echo "=== P5 / $* / Linux $(uname -r) ==="; echo; }
 pause() { echo; echo "$1"; sleep 5; }
-row() { head -n 2 /proc/slabinfo; grep '^p5_lab_cache ' /proc/slabinfo || fail cache_missing; }
+row() { head -n 2 /proc/slabinfo | fold -s -w 110; grep '^p5_lab_cache ' /proc/slabinfo || fail cache_missing; }
 owner_ok() { grep -qx 'owner_held=4' /proc/p5_owner && grep -qx 'owner_verified=4' /proc/p5_owner || fail owner_data; }
 no_cache() { if grep -q '^p5_lab_cache ' /proc/slabinfo; then fail cache_leaked; fi; }
 
@@ -19,7 +19,7 @@ echo '3. Find the cache in /proc/slabinfo. 4. Free objects and destroy the cache
 run uname -r
 run cat /proc/cmdline
 run sh -c 'grep -E "^CONFIG_(SLUB|SLUB_DEBUG|MODULES|MODULE_UNLOAD|PROC_FS|SYSFS)=" /etc/p5-kernel.config'
-run head -n 2 /proc/slabinfo
+run sh -c 'head -n 2 /proc/slabinfo | fold -s -w 110'
 no_cache
 echo 'PASS: p5_lab_cache does not exist before the owner module loads.'
 pause P5_BASELINE_OK
@@ -55,7 +55,9 @@ pause P5_CROSS_MODULE_OK
 screen 'Find and interpret the custom cache in /proc/slabinfo'
 row
 echo
-run sh -c 'for attr in object_size slab_size align objs_per_slab order; do printf "%s=" "$attr"; cat "/sys/kernel/slab/p5_lab_cache/$attr"; done'
+for attr in object_size slab_size align objs_per_slab order; do
+    run cat "/sys/kernel/slab/p5_lab_cache/$attr"
+done
 awk '$1=="p5_lab_cache" {printf "Parsed row: active_objs=%s total_objs=%s slot_bytes=%s objects_per_slab=%s pages_per_slab=%s\n", $2,$3,$4,$5,$6; if ($3<100 || $4<128) exit 1; found=1} END {if (!found) exit 1}' /proc/slabinfo || fail invalid_slabinfo
 echo
 echo 'name: custom cache name; active_objs/num_objs: allocator accounting and capacity.'
